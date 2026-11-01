@@ -18,7 +18,7 @@ insert into public.profiles (id, team_id, full_name, role, active)
 select u.id, t.id, 'Entrenador Cullera FC', 'coach', true
 from auth.users u
 cross join public.teams t
-where lower(u.email) = lower('correo-real-del-entrenador@example.com')
+where lower(u.email) = lower('marcosvallecillosu@gmail.com')
   and t.slug = 'cullera-fc'
 on conflict (id) do update
 set team_id = excluded.team_id, role = 'coach', active = true;

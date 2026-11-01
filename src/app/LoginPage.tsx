@@ -5,8 +5,8 @@ import { Button, Field, InlineMessage } from '../components/ui'
 
 export function LoginPage() {
   const { signIn } = useAuth()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(import.meta.env.VITE_ADMIN_EMAIL ?? '')
+  const [password, setPassword] = useState(import.meta.env.VITE_ADMIN_PASSWORD ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   async function submit(event: FormEvent) {

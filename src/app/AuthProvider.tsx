@@ -72,7 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'La conexión de Supabase no está configurada.' }
+
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+
+    // Si las credenciales no existen todavía y coinciden con las del .env, registrar automáticamente
+    if (error && /invalid login credentials/i.test(error.message)) {
+      const seedEmail = import.meta.env.VITE_ADMIN_EMAIL?.trim()
+      const seedPassword = import.meta.env.VITE_ADMIN_PASSWORD
+      if (email.trim() === seedEmail && password === seedPassword) {
+        const { error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password })
+        if (signUpError) return { error: readableAuthError(signUpError.message) }
+        // Segundo intento de login tras el registro
+        const { error: retryError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        return { error: retryError ? readableAuthError(retryError.message) : null }
+      }
+    }
+
     return { error: error ? readableAuthError(error.message) : null }
   }, [])
 
