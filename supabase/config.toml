@@ -1,0 +1,2 @@
+[functions.invite-player]
+verify_jwt = true
