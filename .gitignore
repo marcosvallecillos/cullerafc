@@ -1,6 +1,69 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build
 dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Env / secrets
 .env
 .env.*
 !.env.example
+
+# Logs / debug
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor
 .DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Cursor / agent local skills (full skill trees get huge)
+.cursor/
+.agents/
+.unslop/
+
+# Temp / local tooling
+tmp/
+tmp-shots/
+_shot.mjs
+_*.css
+_*.py
+*.local
+*.tmp
+
+# Playwright / test artifacts
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Vite / caches
+.vite/
+.cache/
+.turbo/
+
+# Supabase local CLI noise
+supabase/.temp/
+supabase/.branches/
+supabase/.temp/**
+
+# Package manager noise
+.npm/
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions

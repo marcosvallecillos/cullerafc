@@ -1,13 +1,22 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDownRight, ArrowRight, Bell, CalendarDays, ClipboardList, MapPin, Megaphone, Plus, Shield, Sparkles, Users } from 'lucide-react'
-import { addDays, format, parseISO } from 'date-fns'
+import { ArrowRight, CalendarDays, ClipboardList, MapPin, Megaphone, Plus } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useAuth } from '../../app/AuthProvider'
 import { Button, Card, EmptyState, Field, InlineMessage, LoadingState, PageHeading, Pill, TextareaField } from '../../components/ui'
 import { supabase } from '../../lib/supabase/client'
 import type { Activity, Announcement, AttendanceResponse, Lineup, MatchRecord } from '../../lib/types'
-import { activityLabels, formatClock, formatDate, formatShortDate } from '../../lib/format'
+import { activityLabels, formatClock, formatDate } from '../../lib/format'
+
+function dayParts(isoDate: string) {
+  const date = parseISO(isoDate)
+  return {
+    day: format(date, 'd'),
+    month: format(date, 'MMM', { locale: es }).replace('.', ''),
+    weekday: format(date, 'EEE', { locale: es }).replace('.', ''),
+  }
+}
 
 export function HomePage() {
   const { profile } = useAuth()
@@ -72,108 +81,168 @@ export function HomePage() {
 
   const today = format(new Date(), "EEEE d 'de' MMMM", { locale: es })
   const greeting = profile?.full_name.split(' ')[0] || 'equipo'
+  const isCoach = profile?.role === 'coach'
+  const matchDay = match ? dayParts(match.match_date) : null
+  const activityDay = activity ? dayParts(activity.activity_date) : null
 
   return (
     <>
       <PageHeading
         eyebrow={today}
-        title={`Hola, ${greeting}.`}
-        description={profile?.role === 'coach' ? 'Prepara la convocatoria, la pizarra y la semana del equipo.' : 'Tus próximas citas, avisos y alineaciones en un solo lugar.'}
-        action={profile?.role === 'coach' ? <Button variant="secondary" size="sm" onClick={() => setShowNotice((value) => !value)}><Plus size={15} /> Aviso</Button> : undefined}
+        title={`Hola, ${greeting}`}
+        description={isCoach ? 'Partido, convocatoria y avisos.' : 'Tu convocatoria y avisos del club.'}
+        action={isCoach ? <Button variant="secondary" size="sm" onClick={() => setShowNotice((value) => !value)}><Plus size={15} /> Aviso</Button> : undefined}
       />
+
       {error && <InlineMessage tone="error">{error}</InlineMessage>}
+
       {showNotice && (
         <Card className="notice-composer">
           <form onSubmit={publishNotice}>
-            <div className="section-head"><h2>Nuevo aviso</h2><button type="button" onClick={() => setShowNotice(false)}>Cancelar</button></div>
-            <Field label="Título" maxLength={90} required value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="Información para el equipo" />
-            <TextareaField label="Mensaje" required maxLength={700} value={noticeBody} onChange={(event) => setNoticeBody(event.target.value)} placeholder="Escribe los detalles…" />
-            <Button type="submit" disabled={saving}>{saving ? 'Publicando…' : 'Publicar aviso'}<ArrowRight size={15} /></Button>
+            <div className="section-head">
+              <h2>Nuevo aviso</h2>
+              <button type="button" onClick={() => setShowNotice(false)}>Cancelar</button>
+            </div>
+            <Field label="Título" maxLength={90} required value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="Asunto" />
+            <TextareaField label="Mensaje" required maxLength={700} value={noticeBody} onChange={(event) => setNoticeBody(event.target.value)} placeholder="Texto del aviso" />
+            <Button type="submit" disabled={saving}>{saving ? 'Publicando…' : 'Publicar'}<ArrowRight size={15} /></Button>
           </form>
         </Card>
       )}
-      <section className="dashboard-hero">
-        <div className="hero-copy">
-          <div className="hero-label"><span className="hero-pip" /> {profile?.role === 'coach' ? 'PREPARACIÓN DEL EQUIPO' : 'TU SEMANA · CULLERA FC'}</div>
-          <h2>{profile?.role === 'coach' ? <>Prepara al equipo<br /><em>para el reto.</em></> : <>Tu próximo reto<br /><em>empieza aquí.</em></>}</h2>
-          <p>{profile?.role === 'coach' ? 'Convocatoria, pizarra y calendario en un solo lugar.' : 'Todo lo que necesitas para llegar preparado.'}</p>
-          <Link to={profile?.role === 'coach' ? '/tactics' : '/activities'} className="hero-link">{profile?.role === 'coach' ? 'Diseñar alineación' : 'Ver convocatoria'} <ArrowRight size={16} /></Link>
-        </div>
-        <div className="hero-mark"><div className="hero-ring hero-ring-a" /><div className="hero-ring hero-ring-b" /><img src="/cullera-mark.svg" alt="Escudo de Cullera FC" /></div>
-        <div className="hero-number">CFC <span>· 7</span></div>
-      </section>
 
-      <div className="dashboard-grid">
-        <div className="dashboard-main-col">
-          <div className="section-head"><h2>{profile?.role === 'coach' ? 'Agenda del equipo' : 'Tu agenda'}</h2><Link to="/activities">Ver calendario <ArrowRight size={13} /></Link></div>
-          {loading ? <Card><LoadingState label="Buscando próximas citas…" /></Card> : (
-            <div className="event-stack">
-              <Card className="event-card match-card">
-                <div className="event-marker"><Shield size={17} /></div>
-                <div className="event-main">
-                  <div className="event-topline"><span className="eyebrow">PRÓXIMO PARTIDO</span>{match && <span className="event-date-chip">{formatShortDate(match.match_date)}</span>}</div>
-                  {match ? (
-                    <>
-                      <h3>Cullera FC <span>vs</span> {match.opponent}</h3>
-                      <div className="event-details">
-                        <span><CalendarDays size={14} />{formatDate(match.match_date, "EEEE d 'de' MMMM")}</span>
-                        <span><span className="tiny-clock" />{formatClock(match.start_time)}</span>
-                        {match.location && <span><MapPin size={14} />{match.location}</span>}
-                      </div>
-                      <Link to="/matches" className="inline-link">Ver partido <ArrowRight size={13} /></Link>
-                    </>
-                  ) : <EmptyState title="Sin partido programado" detail="Cuando el entrenador añada un partido aparecerá aquí." />}
-                </div>
+      <div className="home-layout">
+        <div className="home-primary">
+          <div className="section-head">
+            <h2>Próximas citas</h2>
+            <Link to="/activities">Calendario <ArrowRight size={13} /></Link>
+          </div>
+
+          {loading ? (
+            <Card className="home-block"><LoadingState label="Cargando…" /></Card>
+          ) : (
+            <div className="home-stack">
+              <Card className={match && matchDay ? 'home-row' : 'home-row home-row-empty'}>
+                {match && matchDay ? (
+                  <>
+                    <div className="home-date">
+                      <span>{matchDay.weekday}</span>
+                      <strong>{matchDay.day}</strong>
+                      <span>{matchDay.month}</span>
+                    </div>
+                    <div className="home-row-body">
+                      <div className="home-row-label">Partido</div>
+                      <h3>
+                        Cullera FC <i>vs</i> {match.opponent}
+                      </h3>
+                      <ul className="home-meta">
+                        <li><CalendarDays size={13} />{formatDate(match.match_date, "EEEE d 'de' MMMM")}</li>
+                        <li>{formatClock(match.start_time)}</li>
+                        {match.location && <li><MapPin size={13} />{match.location}</li>}
+                      </ul>
+                      <Link to="/matches" className="inline-link">Detalle <ArrowRight size={13} /></Link>
+                    </div>
+                  </>
+                ) : (
+                  <EmptyState title="Sin partido" detail="Cuando haya fecha, saldrá aquí." />
+                )}
               </Card>
-              <Card className="event-card activity-card">
-                <div className="event-marker"><CalendarDays size={17} /></div>
-                <div className="event-main">
-                  <div className="event-topline"><span className="eyebrow">PRÓXIMA ACTIVIDAD</span>{activity && <span className="event-date-chip lime-chip">{formatShortDate(activity.activity_date)}</span>}</div>
-                  {activity ? (
-                    <>
+
+              <Card className={activity && activityDay ? 'home-row' : 'home-row home-row-empty'}>
+                {activity && activityDay ? (
+                  <>
+                    <div className="home-date home-date-muted">
+                      <span>{activityDay.weekday}</span>
+                      <strong>{activityDay.day}</strong>
+                      <span>{activityDay.month}</span>
+                    </div>
+                    <div className="home-row-body">
+                      <div className="home-row-label">{activityLabels[activity.activity_type]}</div>
                       <h3>{activity.title}</h3>
-                      <div className="event-details">
-                        <span><Sparkles size={14} />{activityLabels[activity.activity_type]}</span>
-                        <span><span className="tiny-clock" />{formatClock(activity.start_time)}</span>
-                        {activity.location && <span><MapPin size={14} />{activity.location}</span>}
-                      </div>
-                      {profile?.role === 'player' && <div className="home-rsvp-status"><span>Tu respuesta</span><Pill tone={activityResponse === 'yes' ? 'lime' : activityResponse === 'no' ? 'red' : 'neutral'}>{activityResponse === 'yes' ? 'Confirmada' : activityResponse === 'no' ? 'No puedes asistir' : 'Pendiente de confirmar'}</Pill></div>}
-                      <Link to="/activities" className="inline-link">Ver actividad <ArrowRight size={13} /></Link>
-                    </>
-                  ) : <EmptyState title="Sin actividad programada" detail="Las próximas actividades estarán visibles en este espacio." />}
-                </div>
+                      <ul className="home-meta">
+                        <li>{formatClock(activity.start_time)}</li>
+                        {activity.location && <li><MapPin size={13} />{activity.location}</li>}
+                      </ul>
+                      {!isCoach && (
+                        <div className="home-rsvp-status">
+                          <span>Asistencia</span>
+                          <Pill tone={activityResponse === 'yes' ? 'lime' : activityResponse === 'no' ? 'red' : 'neutral'}>
+                            {activityResponse === 'yes' ? 'Confirmada' : activityResponse === 'no' ? 'No asisto' : 'Pendiente'}
+                          </Pill>
+                        </div>
+                      )}
+                      <Link to="/activities" className="inline-link">Detalle <ArrowRight size={13} /></Link>
+                    </div>
+                  </>
+                ) : (
+                  <EmptyState title="Sin actividad" detail="La próxima convocatoria aparecerá aquí." />
+                )}
               </Card>
             </div>
           )}
-          <div className="section-head"><h2>Última alineación</h2><Link to="/tactics">Abrir táctica <ArrowRight size={13} /></Link></div>
-          <Card className="lineup-teaser">
+
+          <div className="section-head">
+            <h2>Alineación</h2>
+            <Link to="/tactics">Táctica <ArrowRight size={13} /></Link>
+          </div>
+
+          <Card className="home-lineup">
             {lineup ? (
-              <div className="lineup-teaser-inner">
-                <div className="mini-pitch"><div className="mini-pitch-circle" />{Array.from({ length: 7 }, (_, index) => <div className={`mini-pitch-mark m${index + 1}`} key={index} />)}</div>
-                <div className="lineup-teaser-copy"><span className="eyebrow">PUBLICADA</span><h3>{lineup.name}</h3><p>Formación <b>{lineup.formation}</b></p><Link to="/tactics" className="inline-link">Ver alineación <ArrowRight size={13} /></Link></div>
+              <div className="home-lineup-body">
+                <div>
+                  <div className="home-row-label">Publicada</div>
+                  <h3>{lineup.name}</h3>
+                  <p>Formación {lineup.formation}</p>
+                </div>
+                <Link to="/tactics" className="inline-link">Ver <ArrowRight size={13} /></Link>
               </div>
-            ) : <EmptyState icon={<ClipboardList size={19} />} title="Aún no hay alineación publicada" detail="La alineación del próximo partido aparecerá aquí cuando el entrenador la publique." />}
+            ) : (
+              <EmptyState icon={<ClipboardList size={18} />} title="Sin alineación publicada" detail="Cuando el entrenador la publique, la verás aquí." />
+            )}
           </Card>
         </div>
 
-        <aside className="dashboard-side-col">
-          <Card className="week-card">
-            <div className="week-card-top"><div><span className="eyebrow">{profile?.role === 'coach' ? 'PANEL DEL ENTRENADOR' : 'TU SEMANA'}</span><h3>{profile?.role === 'coach' ? <>El equipo,<br />en movimiento.</> : <>Tu equipo,<br />a punto.</>}</h3></div><div className="week-icon"><ArrowDownRight size={19} /></div></div>
-            <div className="week-date"><CalendarDays size={15} />{format(new Date(), 'd MMM', { locale: es })} — {format(addDays(new Date(), 6), 'd MMM', { locale: es })}</div>
-            <div className="week-links">{profile?.role === 'coach' ? <><Link to="/tactics">Preparar alineación <ArrowRight size={14} /></Link><Link to="/roster">Gestionar plantilla <ArrowRight size={14} /></Link><Link to="/activities">Organizar actividad <ArrowRight size={14} /></Link></> : <><Link to="/activities">Confirmar asistencia <ArrowRight size={14} /></Link><Link to="/tactics">Consultar pizarra <ArrowRight size={14} /></Link><Link to="/matches">Ver partidos <ArrowRight size={14} /></Link></>}</div>
+        <aside className="home-aside">
+          <Card className="home-links">
+            <div className="home-row-label">{isCoach ? 'Gestión' : 'Accesos'}</div>
+            <nav>
+              {isCoach ? (
+                <>
+                  <Link to="/tactics">Alineación <ArrowRight size={14} /></Link>
+                  <Link to="/roster">Plantilla <ArrowRight size={14} /></Link>
+                  <Link to="/activities">Actividades <ArrowRight size={14} /></Link>
+                  <Link to="/matches">Partidos <ArrowRight size={14} /></Link>
+                </>
+              ) : (
+                <>
+                  <Link to="/activities">Asistencia <ArrowRight size={14} /></Link>
+                  <Link to="/tactics">Pizarra <ArrowRight size={14} /></Link>
+                  <Link to="/matches">Partidos <ArrowRight size={14} /></Link>
+                </>
+              )}
+            </nav>
           </Card>
-          <div className="section-head announcement-head"><h2>Avisos del equipo</h2><Bell size={16} /></div>
-          {loading ? <Card><LoadingState label="Cargando avisos…" /></Card> : announcements.length ? (
-            <div className="announcement-list">
+
+          <div className="section-head">
+            <h2>Avisos</h2>
+          </div>
+
+          {loading ? (
+            <Card className="home-block"><LoadingState label="Cargando…" /></Card>
+          ) : announcements.length ? (
+            <div className="home-notices">
               {announcements.map((item) => (
-                <Card className="announcement-card" key={item.id}>
-                  <div className="announcement-icon"><Megaphone size={15} /></div>
-                  <div className="announcement-copy"><div className="announcement-meta">{format(parseISO(item.created_at), 'd MMM · HH:mm', { locale: es })}</div><strong>{item.title}</strong><p>{item.body}</p></div>
-                </Card>
+                <article className="home-notice" key={item.id}>
+                  <time dateTime={item.created_at}>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time>
+                  <strong>{item.title}</strong>
+                  <p>{item.body}</p>
+                </article>
               ))}
             </div>
-          ) : <Card><EmptyState icon={<Megaphone size={18} />} title="No hay avisos nuevos" detail="Cuando el entrenador publique información, la verás aquí." /></Card>}
-          {profile?.role === 'coach' && <div className="coach-hint"><Users size={15} /><span>Las publicaciones solo son visibles para Cullera FC.</span></div>}
+          ) : (
+            <Card className="home-block">
+              <EmptyState icon={<Megaphone size={18} />} title="Sin avisos" detail="Los avisos del entrenador saldrán aquí." />
+            </Card>
+          )}
         </aside>
       </div>
     </>

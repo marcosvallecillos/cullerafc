@@ -92,8 +92,9 @@ export function RosterPage() {
     }
     let warning: string | null = null
     if (playerId && form.email.trim() && !editing) {
-      const { error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email: form.email.trim(), player_id: playerId, full_name: form.full_name.trim() } })
-      if (inviteError) warning = 'Jugador creado, pero no se pudo enviar la invitación. Despliega invite-player en Supabase y vuelve a intentarlo desde la ficha.'
+      const { data: inviteData, error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email: form.email.trim(), player_id: playerId, full_name: form.full_name.trim() } })
+      const invitePayload = inviteData as { error?: string } | null
+      if (inviteError || invitePayload?.error) warning = invitePayload?.error || 'Jugador creado, pero no se pudo enviar la invitación. Vuelve a intentarlo desde la ficha.'
     }
     if (playerId && form.photo) {
       try {
@@ -123,9 +124,17 @@ export function RosterPage() {
     setInvitingId(player.id)
     setError(null)
     setSuccess(null)
-    const { error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email, player_id: player.id, full_name: player.full_name } })
-    if (inviteError) setError('No se pudo enviar la invitación. Comprueba que la función invite-player esté desplegada y que el correo no tenga una cuenta existente.')
-    else setSuccess(`Invitación enviada a ${email}.`)
+    const { data, error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email, player_id: player.id, full_name: player.full_name } })
+    const payload = data as { error?: string; invited?: boolean; resent?: boolean; confirmed?: boolean } | null
+    if (inviteError || payload?.error) {
+      setError(payload?.error || 'No se pudo enviar la invitación. Despliega de nuevo la función invite-player en Supabase.')
+    } else if (payload?.confirmed) {
+      setSuccess(`Cuenta reactivada para ${email}. Ya puede entrar con su contraseña.`)
+    } else if (payload?.resent) {
+      setSuccess(`Invitación reenviada a ${email}.`)
+    } else {
+      setSuccess(`Invitación enviada a ${email}.`)
+    }
     await load()
     setInvitingId(null)
   }

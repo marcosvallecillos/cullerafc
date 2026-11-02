@@ -5,19 +5,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        pitch: '#0B1118',
-        panel: '#151F2B',
-        lime: '#B6F23B',
-        muted: '#A5B3C1',
-        line: '#263442',
+        pitch: '#0A0E12',
+        panel: '#141A21',
+        lime: '#C8F542',
+        muted: '#8B98A5',
+        line: '#2A343F',
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['Barlow Condensed', 'Inter', 'ui-sans-serif', 'sans-serif'],
+        sans: ['Archivo', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['Barlow Condensed', 'Archivo', 'ui-sans-serif', 'sans-serif'],
       },
       boxShadow: {
-        glow: '0 0 32px rgba(182, 242, 59, .12)',
-        card: '0 14px 40px rgba(0, 0, 0, .22)',
+        card: '0 12px 28px rgba(0, 0, 0, .28)',
+      },
+      borderRadius: {
+        panel: '6px',
       },
     },
   },

@@ -7,14 +7,44 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0B1118",
-  "theme_color": "#0B1118",
+  "background_color": "#0A0E12",
+  "theme_color": "#0A0E12",
   "icons": [
-    { "src": "/icons/cullera-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/cullera-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "/icons/cullera-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/cullera-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ],
   "shortcuts": [
-    { "name": "Táctica", "short_name": "Táctica", "url": "/tactics", "icons": [{ "src": "/cullera-mark.svg", "sizes": "any" }] },
-    { "name": "Calendario", "short_name": "Calendario", "url": "/activities", "icons": [{ "src": "/cullera-mark.svg", "sizes": "any" }] }
+    {
+      "name": "Táctica",
+      "short_name": "Táctica",
+      "url": "/tactics",
+      "icons": [
+        {
+          "src": "/cullera_logo.jpg",
+          "sizes": "any"
+        }
+      ]
+    },
+    {
+      "name": "Calendario",
+      "short_name": "Calendario",
+      "url": "/activities",
+      "icons": [
+        {
+          "src": "/cullera_logo.jpg",
+          "sizes": "any"
+        }
+      ]
+    }
   ]
 }

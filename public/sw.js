@@ -1,5 +1,5 @@
 const CACHE_NAME = 'cullera-shell-v1'
-const SHELL = ['/', '/manifest.webmanifest', '/cullera-mark.svg']
+const SHELL = ['/', '/manifest.webmanifest', '/cullera_logo.jpg']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)))
