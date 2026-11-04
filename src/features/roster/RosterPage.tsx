@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Check, MailPlus, Pencil, Plus, Search, ShieldCheck, Trash2, UserRound, Users, X } from 'lucide-react'
+import { Check, MailPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, Trash2, UserRound, Users, X } from 'lucide-react'
 import { useAuth } from '../../app/AuthProvider'
 import { Button, Card, EmptyState, Field, InlineMessage, LoadingState, PageHeading, Pill, SelectField } from '../../components/ui'
 import { availabilityLabels } from '../../lib/format'
@@ -54,7 +54,7 @@ export function RosterPage() {
 
   function startEdit(player: Player) {
     setEditing(player)
-    setForm({ full_name: player.full_name, jersey_number: player.jersey_number?.toString() ?? '', position: player.position ?? '', availability: player.availability, email: '', photo: null })
+    setForm({ full_name: player.full_name, jersey_number: player.jersey_number?.toString() ?? '', position: player.position ?? '', availability: player.availability, email: player.invite_email ?? '', photo: null })
     setError(null)
     setSuccess(null)
     setShowForm(true)
@@ -81,18 +81,19 @@ export function RosterPage() {
     setSuccess(null)
     let playerId = editing?.id
     let oldPhotoPath = editing?.photo_path ?? null
-    const values = { team_id: profile.team_id, full_name: form.full_name.trim(), jersey_number: jersey, position: form.position.trim() || null, availability: form.availability }
+    const inviteEmail = form.email.trim().toLowerCase() || null
+    const values = { team_id: profile.team_id, full_name: form.full_name.trim(), jersey_number: jersey, position: form.position.trim() || null, availability: form.availability, invite_email: inviteEmail }
     if (editing) {
       const { error: updateError } = await supabase.from('players').update(values).eq('id', editing.id).eq('team_id', profile.team_id)
-      if (updateError) { setError('No se pudo actualizar el jugador.'); setSaving(false); return }
+      if (updateError) { setError(updateError.message.includes('invite_email') ? 'No se pudo guardar el correo. ¿Aplicaste la migración invite_email?' : 'No se pudo actualizar el jugador.'); setSaving(false); return }
     } else {
       const { data, error: insertError } = await supabase.from('players').insert(values).select('id').single()
-      if (insertError || !data) { setError('No se pudo crear el jugador. Comprueba que el dorsal no esté duplicado.'); setSaving(false); return }
+      if (insertError || !data) { setError('No se pudo crear el jugador. Comprueba que el dorsal o el correo no estén duplicados.'); setSaving(false); return }
       playerId = data.id as string
     }
     let warning: string | null = null
-    if (playerId && form.email.trim() && !editing) {
-      const { data: inviteData, error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email: form.email.trim(), player_id: playerId, full_name: form.full_name.trim() } })
+    if (playerId && inviteEmail && !editing) {
+      const { data: inviteData, error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email: inviteEmail, player_id: playerId, full_name: form.full_name.trim() } })
       const invitePayload = inviteData as { error?: string } | null
       if (inviteError || invitePayload?.error) warning = invitePayload?.error || 'Jugador creado, pero no se pudo enviar la invitación. Vuelve a intentarlo desde la ficha.'
     }
@@ -117,23 +118,32 @@ export function RosterPage() {
     setSaving(false)
   }
 
-  async function invitePlayer(player: Player) {
+  async function invitePlayer(player: Player, opts?: { resend?: boolean }) {
     if (!supabase) return
-    const email = window.prompt(`Correo de acceso para ${player.full_name}:`)?.trim()
-    if (!email) return
+    const stored = player.invite_email?.trim().toLowerCase() || ''
+    const email = opts?.resend
+      ? stored
+      : (stored || window.prompt(`Correo de acceso para ${player.full_name}:`)?.trim().toLowerCase() || '')
+    if (!email) {
+      if (opts?.resend) setError('Esta ficha no tiene correo guardado. Edítala y añade el correo.')
+      return
+    }
     setInvitingId(player.id)
     setError(null)
     setSuccess(null)
-    const { data, error: inviteError } = await supabase.functions.invoke('invite-player', { body: { email, player_id: player.id, full_name: player.full_name } })
-    const payload = data as { error?: string; invited?: boolean; resent?: boolean; confirmed?: boolean } | null
+    const { data, error: inviteError } = await supabase.functions.invoke('invite-player', {
+      body: { email, player_id: player.id, full_name: player.full_name, resend: Boolean(opts?.resend || stored) },
+    })
+    const payload = data as { error?: string; invited?: boolean; resent?: boolean; recovery?: boolean; email?: string } | null
+    const sentTo = payload?.email || email
     if (inviteError || payload?.error) {
-      setError(payload?.error || 'No se pudo enviar la invitación. Despliega de nuevo la función invite-player en Supabase.')
-    } else if (payload?.confirmed) {
-      setSuccess(`Cuenta reactivada para ${email}. Ya puede entrar con su contraseña.`)
-    } else if (payload?.resent) {
-      setSuccess(`Invitación reenviada a ${email}.`)
+      setError(payload?.error || 'No se pudo enviar la invitación. Despliega de nuevo invite-player y aplica la migración invite_email.')
+    } else if (payload?.recovery) {
+      setSuccess(`Correo de acceso reenviado a ${sentTo}.`)
+    } else if (payload?.resent || opts?.resend) {
+      setSuccess(`Invitación reenviada a ${sentTo}.`)
     } else {
-      setSuccess(`Invitación enviada a ${email}.`)
+      setSuccess(`Invitación enviada a ${sentTo}.`)
     }
     await load()
     setInvitingId(null)
@@ -159,15 +169,28 @@ export function RosterPage() {
     {success && <InlineMessage tone="success">{success}</InlineMessage>}
     {showForm && isCoach && <Card className="roster-form-card"><form onSubmit={savePlayer}>
       <div className="section-head"><h2>{editing ? 'Editar ficha' : 'Nuevo jugador'}</h2><button type="button" aria-label="Cerrar formulario" onClick={() => setShowForm(false)}><X size={17} /></button></div>
-      <div className="roster-form-grid"><Field label="Nombre y apellidos" autoFocus required maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} placeholder="Nombre completo" /><Field label="Dorsal" type="number" min="0" max="99" value={form.jersey_number} onChange={(event) => setForm((value) => ({ ...value, jersey_number: event.target.value }))} placeholder="—" /><SelectField label="Posición" value={form.position} onChange={(event) => setForm((value) => ({ ...value, position: event.target.value }))}><option value="">Sin especificar</option>{['Portero', 'Defensa', 'Medio', 'Delantero'].map((item) => <option key={item}>{item}</option>)}</SelectField><SelectField label="Disponibilidad" value={form.availability} onChange={(event) => setForm((value) => ({ ...value, availability: event.target.value as Availability }))}><option value="available">Disponible</option><option value="injured">Lesionado</option><option value="temporary_leave">Baja temporal</option></SelectField><label className="field"><span>Fotografía</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setForm((value) => ({ ...value, photo: event.target.files?.[0] ?? null }))} /><small>JPG, PNG o WebP · hasta 5 MB</small></label>{!editing && <Field className="invite-email-field" label="Correo para invitar (opcional)" type="email" autoComplete="email" value={form.email} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} placeholder="jugador@correo.com" hint="Le enviaremos un enlace privado para crear su contraseña." />}</div>
+      <div className="roster-form-grid"><Field label="Nombre y apellidos" autoFocus required maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} placeholder="Nombre completo" /><Field label="Dorsal" type="number" min="0" max="99" value={form.jersey_number} onChange={(event) => setForm((value) => ({ ...value, jersey_number: event.target.value }))} placeholder="—" /><SelectField label="Posición" value={form.position} onChange={(event) => setForm((value) => ({ ...value, position: event.target.value }))}><option value="">Sin especificar</option>{['Portero', 'Defensa', 'Medio', 'Delantero'].map((item) => <option key={item}>{item}</option>)}</SelectField><SelectField label="Disponibilidad" value={form.availability} onChange={(event) => setForm((value) => ({ ...value, availability: event.target.value as Availability }))}><option value="available">Disponible</option><option value="injured">Lesionado</option><option value="temporary_leave">Baja temporal</option></SelectField><label className="field"><span>Fotografía</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setForm((value) => ({ ...value, photo: event.target.files?.[0] ?? null }))} /><small>JPG, PNG o WebP · hasta 5 MB</small></label><Field className="invite-email-field" label="Correo de invitación" type="email" autoComplete="email" value={form.email} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} placeholder="jugador@correo.com" hint="Se guarda en la ficha para poder reenviar la invitación." /></div>
       <div className="form-actions"><Button type="submit" disabled={saving}>{saving ? 'Guardando…' : <><Check size={15} /> {editing ? 'Guardar cambios' : 'Añadir a plantilla'}</>}</Button><Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button></div>
     </form></Card>}
-    {isCoach && <InlineMessage tone="info"><MailPlus size={14} /> Puedes crear la ficha sin invitar. Para enviar accesos desde aquí, despliega la función segura <code>invite-player</code> en tu proyecto Supabase.</InlineMessage>}
+    {isCoach && <InlineMessage tone="info"><MailPlus size={14} /> Guarda el correo en la ficha. Después usa <b>Reenviar invitación</b> para volver a mandar el acceso a ese mismo correo.</InlineMessage>}
     <div className="roster-toolbar"><div className="roster-count"><Users size={16} /><span>Integrantes</span><b>{players.length}</b></div><label className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar jugador" aria-label="Buscar jugador" /></label></div>
     {visiblePlayers.length ? <div className="roster-grid">{visiblePlayers.map((player) => <Card className="player-card" key={player.id}>
       <div className="player-card-main"><div className="player-photo">{player.photo_path && photoUrls[player.photo_path] ? <img src={photoUrls[player.photo_path]} alt={`Fotografía de ${player.full_name}`} /> : <UserRound size={24} />}</div><div className="player-identity"><div className="player-number">{player.jersey_number !== null ? `#${player.jersey_number}` : 'SIN DORSAL'}</div><h3>{player.full_name}</h3><span>{player.position || 'Posición por definir'}</span></div><Pill tone={availabilityTone[player.availability]}>{availabilityLabels[player.availability]}</Pill></div>
       {player.user_id && <div className="player-account"><ShieldCheck size={13} /> Cuenta de equipo vinculada</div>}
-      {isCoach && <div className="player-card-actions"><Button variant="secondary" size="sm" onClick={() => startEdit(player)}><Pencil size={14} /> Editar</Button>{!player.user_id && <Button variant="secondary" size="sm" disabled={invitingId === player.id} onClick={() => void invitePlayer(player)}><MailPlus size={14} /> {invitingId === player.id ? 'Enviando…' : 'Invitar'}</Button>}<Button variant="ghost" size="sm" onClick={() => void deletePlayer(player)}><Trash2 size={14} /> Eliminar</Button></div>}
+      {player.invite_email && <div className="player-account"><MailPlus size={13} /> {player.invite_email}</div>}
+      {isCoach && <div className="player-card-actions">
+        <Button variant="secondary" size="sm" onClick={() => startEdit(player)}><Pencil size={14} /> Editar</Button>
+        {player.invite_email ? (
+          <Button variant="secondary" size="sm" disabled={invitingId === player.id} onClick={() => void invitePlayer(player, { resend: true })}>
+            <RefreshCw size={14} /> {invitingId === player.id ? 'Enviando…' : 'Reenviar invitación'}
+          </Button>
+        ) : (
+          <Button variant="secondary" size="sm" disabled={invitingId === player.id} onClick={() => void invitePlayer(player)}>
+            <MailPlus size={14} /> {invitingId === player.id ? 'Enviando…' : 'Invitar'}
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" onClick={() => void deletePlayer(player)}><Trash2 size={14} /> Eliminar</Button>
+      </div>}
     </Card>)}</div> : <Card><EmptyState icon={<Users size={19} />} title={search ? 'No hay resultados' : 'La plantilla aún está vacía'} detail={search ? 'Prueba con otro nombre, dorsal o posición.' : isCoach ? 'Añade el primer jugador para empezar a preparar alineaciones.' : 'Cuando el entrenador añada jugadores, aparecerán aquí.'} /></Card>}
   </>
 }

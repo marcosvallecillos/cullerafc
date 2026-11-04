@@ -144,16 +144,17 @@ export function LineupEditor() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  async function saveLineup() {
+  async function saveLineup(nextPublished = published) {
     if (!supabase || !profile) return
     if (!name.trim()) { setError('Escribe un nombre para la alineación.'); return }
     const placedStarters = slots.filter((slot) => slot.player_id)
     if (!placedStarters.length) { setError('Añade al menos un jugador antes de guardar.'); return }
-    if (published && placedStarters.length !== 7) { setError('Para publicar la alineación, asigna los 7 titulares.'); return }
+    if (nextPublished && placedStarters.length !== 7) { setError('Para publicar la alineación, asigna los 7 titulares.'); return }
+    setPublished(nextPublished)
     setSaving(true)
     setError(null)
     setSuccess(null)
-    const values = { team_id: profile.team_id, created_by: profile.id, match_id: matchId || null, name: name.trim(), formation, published }
+    const values = { team_id: profile.team_id, created_by: profile.id, match_id: matchId || null, name: name.trim(), formation, published: nextPublished }
     let id = editingId
     if (id) {
       const { error: updateError } = await supabase.from('lineups').update(values).eq('id', id).eq('team_id', profile.team_id)
@@ -179,7 +180,7 @@ export function LineupEditor() {
     }))
     const { error: playersError } = await supabase.from('lineup_players').insert(playerRows)
     if (playersError) setError('La alineación se creó, pero no se pudieron guardar todos los jugadores. Revisa las plazas duplicadas.')
-    else setSuccess(published ? 'Alineación publicada para el equipo.' : 'Borrador guardado.')
+    else setSuccess(nextPublished ? 'Alineación publicada para el equipo.' : 'Borrador guardado.')
     await loadData()
     setSaving(false)
   }
@@ -205,8 +206,8 @@ export function LineupEditor() {
       <div className="lineup-editor-grid">
         <div className="lineup-board-column">
           <Card className="pitch-card">
-            <div className="pitch-card-header"><div><span className="eyebrow">EDITOR 7V7</span><h2>{editingId ? 'Editar alineación' : 'Tu pizarra'}</h2></div><Pill tone="lime">{formation}</Pill></div>
-            <div className="formation-select"><SelectField label="Formación" value={formation} onChange={(event) => changeFormation(event.target.value)}>{Object.keys(FORMATIONS).map((option) => <option key={option} value={option}>{option}{option === '2-3-1' ? ' · Predeterminada' : ''}</option>)}</SelectField></div>
+            <div className="pitch-card-header"><div><span className="eyebrow">EDITOR FÚTBOL 7</span><h2>{editingId ? 'Editar alineación' : 'Tu pizarra táctica'}</h2></div><Pill tone="lime">{formation}</Pill></div>
+            <div className="formation-select"><SelectField label="Formación" value={formation} onChange={(event) => changeFormation(event.target.value)}>{Object.keys(FORMATIONS).map((option) => <option key={option} value={option}>{option}{option === '2-3-1' ? ' · Predeterminada (equilibrada)' : ''}</option>)}</SelectField></div>
             <div className="pitch-stage-wrap">
               <div className="field-stage" ref={stageRef} onPointerMove={moveToken} onPointerUp={() => { dragIndex.current = null }} onPointerCancel={() => { dragIndex.current = null }}>
                 <FootballPitch />
@@ -240,8 +241,15 @@ export function LineupEditor() {
               const used = new Set([...slots.map((item) => item.player_id), ...bench.filter((_, otherIndex) => otherIndex !== index).map((item) => item.player_id)])
               return <div className="slot-row bench-row" key={`bench-${index}`}><span className="slot-number">S{index + 1}</span><select aria-label={`Jugador suplente ${index + 1}`} value={slot.player_id} onChange={(event) => setBench((current) => current.map((item, i) => i === index ? { ...item, player_id: event.target.value } : item))}><option value="">Seleccionar jugador</option>{players.filter((player) => !used.has(player.id)).map((player) => <option key={player.id} value={player.id}>#{player.jersey_number ?? '—'} · {player.full_name}</option>)}</select><button className="small-icon-action" aria-label="Quitar suplente" onClick={() => setBench((current) => current.filter((_, i) => i !== index))}><X size={15} /></button></div>
             })}</div>}
-            <label className="publish-switch"><input type="checkbox" checked={published} onChange={(event) => setPublished(event.target.checked)} /><span className="switch-visual" /><span><strong>Publicar al equipo</strong><small>Visible para todos los jugadores</small></span></label>
-            <div className="lineup-actions"><Button onClick={() => void saveLineup()} disabled={saving || !players.length}>{saving ? 'Guardando…' : <><Save size={16} /> {editingId ? 'Guardar cambios' : 'Guardar alineación'}</>}</Button>{editingId && <Button variant="secondary" onClick={resetEditor}><X size={15} /> Salir</Button>}</div>
+            <div className="lineup-actions">
+              <Button variant="secondary" onClick={() => void saveLineup(false)} disabled={saving || !players.length}>
+                {saving && !published ? 'Guardando…' : 'Guardar borrador'}
+              </Button>
+              <Button onClick={() => void saveLineup(true)} disabled={saving || !players.length}>
+                {saving && published ? 'Publicando…' : <><Save size={16} /> Publicar equipo</>}
+              </Button>
+              {editingId && <Button variant="ghost" onClick={resetEditor}><X size={15} /> Nueva</Button>}
+            </div>
             {!players.length && <InlineMessage tone="info"><Users size={14} /> Añade jugadores a la plantilla antes de diseñar la alineación.</InlineMessage>}
           </Card>
         </div>

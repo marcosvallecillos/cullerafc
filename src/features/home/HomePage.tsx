@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CalendarDays, ClipboardList, MapPin, Megaphone, Plus } from 'lucide-react'
+import {
+  ArrowRight, CalendarDays, Clock, LayoutGrid, MapPin, Megaphone,
+  Plus, Shield, SquarePen, Trophy, Users, Layers, ClipboardList,
+} from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useAuth } from '../../app/AuthProvider'
@@ -13,14 +16,29 @@ function dayParts(isoDate: string) {
   const date = parseISO(isoDate)
   return {
     day: format(date, 'd'),
-    month: format(date, 'MMM', { locale: es }).replace('.', ''),
-    weekday: format(date, 'EEE', { locale: es }).replace('.', ''),
+    month: format(date, 'MMM', { locale: es }).replace('.', '').toUpperCase(),
+    weekday: format(date, 'EEE', { locale: es }).replace('.', '').toUpperCase(),
   }
 }
 
+function formationBreakdown(formation: string) {
+  const parts = formation.split('-').map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+  if (parts.length >= 3) {
+    return {
+      def: parts[0],
+      med: parts.slice(1, -1).reduce((a, b) => a + b, 0),
+      del: parts[parts.length - 1],
+      total: parts.reduce((a, b) => a + b, 0) + 1,
+    }
+  }
+  return null
+}
+
+const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+
 export function HomePage() {
   const { profile } = useAuth()
-  const [match, setMatch] = useState<MatchRecord | null>(null)
+  const [matches, setMatches] = useState<MatchRecord[]>([])
   const [activity, setActivity] = useState<Activity | null>(null)
   const [activityResponse, setActivityResponse] = useState<AttendanceResponse | null>(null)
   const [lineup, setLineup] = useState<Lineup | null>(null)
@@ -41,15 +59,15 @@ export function HomePage() {
     const currentTime = format(now, 'HH:mm:ss')
     const matchWindow = `match_date.gt.${today},and(match_date.eq.${today},start_time.gte.${currentTime}),and(match_date.eq.${today},start_time.is.null)`
     const activityWindow = `activity_date.gt.${today},and(activity_date.eq.${today},start_time.gte.${currentTime}),and(activity_date.eq.${today},start_time.is.null)`
-    const [matches, activities, lineups, notices] = await Promise.all([
-      supabase.from('matches').select('*').eq('team_id', profile.team_id).eq('status', 'pending').or(matchWindow).order('match_date').order('start_time', { ascending: true, nullsFirst: false }).limit(1),
+    const [matchResult, activities, lineups, notices] = await Promise.all([
+      supabase.from('matches').select('*').eq('team_id', profile.team_id).eq('status', 'pending').or(matchWindow).order('match_date').order('start_time', { ascending: true, nullsFirst: false }).limit(3),
       supabase.from('activities').select('*').eq('team_id', profile.team_id).or(activityWindow).order('activity_date').order('start_time', { ascending: true, nullsFirst: false }).limit(1),
       supabase.from('lineups').select('*').eq('team_id', profile.team_id).eq('published', true).order('updated_at', { ascending: false }).limit(1),
       supabase.from('announcements').select('*').eq('team_id', profile.team_id).order('created_at', { ascending: false }).limit(3),
     ])
-    const failed = [matches.error, activities.error, lineups.error, notices.error].find(Boolean)
+    const failed = [matchResult.error, activities.error, lineups.error, notices.error].find(Boolean)
     if (failed) setError('No se pudo actualizar el inicio. Comprueba que el esquema de Supabase esté aplicado.')
-    setMatch((matches.data?.[0] as MatchRecord | undefined) ?? null)
+    setMatches((matchResult.data as MatchRecord[] | null) ?? [])
     const nextActivity = (activities.data?.[0] as Activity | undefined) ?? null
     setActivity(nextActivity)
     if (profile.role === 'player' && nextActivity) {
@@ -79,19 +97,40 @@ export function HomePage() {
     setSaving(false)
   }
 
-  const today = format(new Date(), "EEEE d 'de' MMMM", { locale: es })
-  const greeting = profile?.full_name.split(' ')[0] || 'equipo'
+  const today = format(new Date(), "EEEE d 'de' MMMM", { locale: es }).toUpperCase()
   const isCoach = profile?.role === 'coach'
+  const match = matches[0] ?? null
   const matchDay = match ? dayParts(match.match_date) : null
   const activityDay = activity ? dayParts(activity.activity_date) : null
+  const scheme = lineup ? formationBreakdown(lineup.formation) : null
+
+  const links = isCoach
+    ? [
+        { to: '/tactics', label: 'Alineación', Icon: LayoutGrid },
+        { to: '/roster', label: 'Plantilla de jugadores', Icon: Users },
+        { to: '/activities', label: 'Actividades y sesiones', Icon: CalendarDays },
+        { to: '/matches', label: 'Calendario de partidos', Icon: Shield },
+      ]
+    : [
+        { to: '/activities', label: 'Asistencia', Icon: CalendarDays },
+        { to: '/tactics', label: 'Pizarra', Icon: LayoutGrid },
+        { to: '/matches', label: 'Partidos', Icon: Shield },
+      ]
 
   return (
-    <>
+    <div className="hm-page">
       <PageHeading
         eyebrow={today}
-        title={`Hola, ${greeting}`}
-        description={isCoach ? 'Partido, convocatoria y avisos.' : 'Tu convocatoria y avisos del club.'}
-        action={isCoach ? <Button variant="secondary" size="sm" onClick={() => setShowNotice((value) => !value)}><Plus size={15} /> Aviso</Button> : undefined}
+        title={isCoach ? 'Hola, entrenador' : `Hola, ${profile?.full_name.split(' ')[0] || 'equipo'}`}
+        description={isCoach
+          ? 'Partido en preparación, convocatoria activa y avisos del cuerpo técnico.'
+          : 'Tu convocatoria, alineación y avisos del club.'}
+        action={isCoach ? (
+          <div className="hm-heading-actions">
+            <Button variant="secondary" size="sm" onClick={() => setShowNotice((value) => !value)}><Plus size={15} /> Nuevo aviso</Button>
+            <Link to="/tactics" className="button button-primary button-sm"><SquarePen size={15} /> Pizarra rápida</Link>
+          </div>
+        ) : undefined}
       />
 
       {error && <InlineMessage tone="error">{error}</InlineMessage>}
@@ -110,141 +149,214 @@ export function HomePage() {
         </Card>
       )}
 
-      <div className="home-layout">
-        <div className="home-primary">
-          <div className="section-head">
-            <h2>Próximas citas</h2>
-            <Link to="/activities">Calendario <ArrowRight size={13} /></Link>
+      {/* HERO a todo el ancho */}
+      {loading ? (
+        <Card className="hm-block"><LoadingState label="Cargando…" /></Card>
+      ) : (
+        <section className={`hm-hero ${match ? '' : 'is-empty'}`}>
+          {match && matchDay ? (
+            <>
+              <div className="hm-hero-pitch" aria-hidden="true" />
+              <div className="hm-hero-grid">
+                <div className="hm-hero-when">
+                  <div className="hm-datebox">
+                    <span>{matchDay.weekday}</span>
+                    <strong>{matchDay.day}</strong>
+                    <span>{matchDay.month}</span>
+                  </div>
+                  <div className="hm-when-copy">
+                    <span className="hm-chip">
+                      <Trophy size={11} />
+                      {match.round ? `${match.round} · Liga regular` : 'Próximo partido'}
+                    </span>
+                    <ul className="hm-meta hm-meta-sm">
+                      <li><Clock size={12} />{formatClock(match.start_time)} H</li>
+                      {match.location && <li><span className="hm-dot" /><MapPin size={12} />{match.location}</li>}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="hm-teams">
+                  <div className="hm-team">
+                    <span className="hm-crest hm-crest-home"><Shield size={16} /></span>
+                    <small>Local</small>
+                    <strong>Cullera FC</strong>
+                  </div>
+                  <span className="hm-vs">VS</span>
+                  <div className="hm-team">
+                    <span className="hm-crest"><Shield size={16} /></span>
+                    <small>Visitante</small>
+                    <strong>{match.opponent}</strong>
+                  </div>
+                </div>
+
+                <div className="hm-hero-cta">
+                  <span className="hm-status"><i />Pendiente</span>
+                  <Link to="/tactics" className="button button-primary button-sm">
+                    <Users size={14} /> Convocatoria & alineación <ArrowRight size={14} />
+                  </Link>
+                </div>
+              </div>
+            </>
+          ) : (
+            <EmptyState title="Sin partido programado" detail="Cuando haya fecha, el próximo rival aparecerá aquí." />
+          )}
+        </section>
+      )}
+
+      <div className="hm-layout">
+        <div className="hm-primary">
+          {/* PRÓXIMAS CITAS */}
+          <div className="hm-head">
+            <h2><CalendarDays size={16} /> Próximas citas</h2>
+            <Link to="/activities">Ver calendario <ArrowRight size={13} /></Link>
           </div>
 
           {loading ? (
-            <Card className="home-block"><LoadingState label="Cargando…" /></Card>
+            <Card className="hm-block"><LoadingState label="Cargando…" /></Card>
           ) : (
-            <div className="home-stack">
-              <Card className={match && matchDay ? 'home-row' : 'home-row home-row-empty'}>
-                {match && matchDay ? (
-                  <>
-                    <div className="home-date">
-                      <span>{matchDay.weekday}</span>
-                      <strong>{matchDay.day}</strong>
-                      <span>{matchDay.month}</span>
+            <div className="hm-stack">
+              {matches.length ? matches.slice(0, 1).map((item) => {
+                const parts = dayParts(item.match_date)
+                return (
+                  <Card className="hm-row" key={item.id}>
+                    <div className="hm-date">
+                      <span>{parts.weekday}</span>
+                      <strong>{parts.day}</strong>
+                      <span>{parts.month}</span>
                     </div>
-                    <div className="home-row-body">
-                      <div className="home-row-label">Partido</div>
-                      <h3>
-                        Cullera FC <i>vs</i> {match.opponent}
-                      </h3>
-                      <ul className="home-meta">
-                        <li><CalendarDays size={13} />{formatDate(match.match_date, "EEEE d 'de' MMMM")}</li>
-                        <li>{formatClock(match.start_time)}</li>
-                        {match.location && <li><MapPin size={13} />{match.location}</li>}
+                    <div className="hm-row-body">
+                      <div className="hm-tags">
+                        <span className="hm-tag hm-tag-lime">Partido oficial</span>
+                        {item.round && <span className="hm-tag-text">{item.round}</span>}
+                      </div>
+                      <h3>Cullera FC <i>vs</i> {item.opponent}</h3>
+                      <ul className="hm-meta">
+                        <li><CalendarDays size={12} />{cap(formatDate(item.match_date, "EEEE d 'de' MMMM"))}</li>
+                        <li><Clock size={12} />{formatClock(item.start_time)}</li>
+                        {item.location && <li><MapPin size={12} />{item.location}</li>}
                       </ul>
-                      <Link to="/matches" className="inline-link">Detalle <ArrowRight size={13} /></Link>
                     </div>
-                  </>
-                ) : (
-                  <EmptyState title="Sin partido" detail="Cuando haya fecha, saldrá aquí." />
-                )}
-              </Card>
+                    <Link to="/matches" className="hm-detail">Detalle <ArrowRight size={12} /></Link>
+                  </Card>
+                )
+              }) : (
+                <Card className="hm-row hm-row-empty"><EmptyState title="Sin partido" detail="Cuando haya fecha, saldrá aquí." /></Card>
+              )}
 
-              <Card className={activity && activityDay ? 'home-row' : 'home-row home-row-empty'}>
+              <Card className={activity && activityDay ? 'hm-row' : 'hm-row hm-row-empty'}>
                 {activity && activityDay ? (
                   <>
-                    <div className="home-date home-date-muted">
+                    <div className="hm-date">
                       <span>{activityDay.weekday}</span>
                       <strong>{activityDay.day}</strong>
                       <span>{activityDay.month}</span>
                     </div>
-                    <div className="home-row-body">
-                      <div className="home-row-label">{activityLabels[activity.activity_type]}</div>
+                    <div className="hm-row-body">
+                      <div className="hm-tags">
+                        <span className={`hm-tag ${activity.activity_type === 'friendly' ? 'hm-tag-blue' : 'hm-tag-lime'}`}>
+                          {activityLabels[activity.activity_type]}
+                        </span>
+                      </div>
                       <h3>{activity.title}</h3>
-                      <ul className="home-meta">
-                        <li>{formatClock(activity.start_time)}</li>
-                        {activity.location && <li><MapPin size={13} />{activity.location}</li>}
+                      <ul className="hm-meta">
+                        <li><Clock size={12} />{formatClock(activity.start_time)}</li>
+                        {activity.location && <li><MapPin size={12} />{activity.location}</li>}
                       </ul>
                       {!isCoach && (
-                        <div className="home-rsvp-status">
+                        <div className="hm-rsvp">
                           <span>Asistencia</span>
                           <Pill tone={activityResponse === 'yes' ? 'lime' : activityResponse === 'no' ? 'red' : 'neutral'}>
                             {activityResponse === 'yes' ? 'Confirmada' : activityResponse === 'no' ? 'No asisto' : 'Pendiente'}
                           </Pill>
                         </div>
                       )}
-                      <Link to="/activities" className="inline-link">Detalle <ArrowRight size={13} /></Link>
                     </div>
+                    <Link to="/activities" className="hm-detail hm-detail-muted">Detalle <ArrowRight size={12} /></Link>
                   </>
-                ) : (
-                  <EmptyState title="Sin actividad" detail="La próxima convocatoria aparecerá aquí." />
-                )}
+                ) : <EmptyState title="Sin actividad" detail="La próxima convocatoria aparecerá aquí." />}
               </Card>
             </div>
           )}
 
-          <div className="section-head">
-            <h2>Alineación</h2>
-            <Link to="/tactics">Táctica <ArrowRight size={13} /></Link>
+          {/* ALINEACIÓN */}
+          <div className="hm-head hm-head-gap">
+            <h2><ClipboardList size={16} /> Alineación & táctica</h2>
+            <Link to="/tactics">Ir a pizarra táctica <ArrowRight size={13} /></Link>
           </div>
 
-          <Card className="home-lineup">
+          <Card className="hm-lineup">
             {lineup ? (
-              <div className="home-lineup-body">
-                <div>
-                  <div className="home-row-label">Publicada</div>
+              <>
+                <span className="hm-lineup-icon"><Layers size={20} /></span>
+                <div className="hm-lineup-body">
+                  <span className="hm-published"><i />Publicada</span>
                   <h3>{lineup.name}</h3>
-                  <p>Formación {lineup.formation}</p>
+                  <p>
+                    Esquema táctico: <b>{lineup.formation}</b> [Fútbol 7]
+                    {scheme && <> · {scheme.total} titulares definidos</>}
+                  </p>
                 </div>
-                <Link to="/tactics" className="inline-link">Ver <ArrowRight size={13} /></Link>
-              </div>
+                {scheme && (
+                  <div className="hm-scheme">
+                    <span>DEF: <b>{scheme.def}</b></span>
+                    <span>MED: <b>{scheme.med}</b></span>
+                    <span>DEL: <b>{scheme.del}</b></span>
+                  </div>
+                )}
+                <Link to="/tactics" className="hm-detail hm-detail-strong">Ver pizarra <ArrowRight size={13} /></Link>
+              </>
             ) : (
               <EmptyState icon={<ClipboardList size={18} />} title="Sin alineación publicada" detail="Cuando el entrenador la publique, la verás aquí." />
             )}
           </Card>
         </div>
 
-        <aside className="home-aside">
-          <Card className="home-links">
-            <div className="home-row-label">{isCoach ? 'Gestión' : 'Accesos'}</div>
+        <aside className="hm-aside">
+          <Card className="hm-links">
+            <div className="hm-aside-head">
+              <span>{isCoach ? 'Gestión del equipo' : 'Accesos'}</span>
+              <em>{links.length} accesos</em>
+            </div>
             <nav>
-              {isCoach ? (
-                <>
-                  <Link to="/tactics">Alineación <ArrowRight size={14} /></Link>
-                  <Link to="/roster">Plantilla <ArrowRight size={14} /></Link>
-                  <Link to="/activities">Actividades <ArrowRight size={14} /></Link>
-                  <Link to="/matches">Partidos <ArrowRight size={14} /></Link>
-                </>
-              ) : (
-                <>
-                  <Link to="/activities">Asistencia <ArrowRight size={14} /></Link>
-                  <Link to="/tactics">Pizarra <ArrowRight size={14} /></Link>
-                  <Link to="/matches">Partidos <ArrowRight size={14} /></Link>
-                </>
-              )}
+              {links.map(({ to, label, Icon }) => (
+                <Link to={to} key={to}><Icon size={15} /><span>{label}</span><ArrowRight size={14} /></Link>
+              ))}
             </nav>
           </Card>
 
-          <div className="section-head">
-            <h2>Avisos</h2>
-          </div>
-
-          {loading ? (
-            <Card className="home-block"><LoadingState label="Cargando…" /></Card>
-          ) : announcements.length ? (
-            <div className="home-notices">
-              {announcements.map((item) => (
-                <article className="home-notice" key={item.id}>
-                  <time dateTime={item.created_at}>{format(parseISO(item.created_at), "d MMM · HH:mm", { locale: es })}</time>
-                  <strong>{item.title}</strong>
-                  <p>{item.body}</p>
-                </article>
-              ))}
+          <Card className="hm-notices">
+            <div className="hm-aside-head hm-aside-head-title">
+              <h2>Avisos</h2>
+              <em>Vestuario</em>
             </div>
-          ) : (
-            <Card className="home-block">
-              <EmptyState icon={<Megaphone size={18} />} title="Sin avisos" detail="Los avisos del entrenador saldrán aquí." />
-            </Card>
-          )}
+            {loading ? (
+              <LoadingState label="Cargando…" />
+            ) : announcements.length ? (
+              <div className="hm-notice-list">
+                {announcements.map((item) => (
+                  <article className="hm-notice" key={item.id}>
+                    <time dateTime={item.created_at}>{format(parseISO(item.created_at), 'd MMM · HH:mm', { locale: es })}</time>
+                    <strong>{item.title}</strong>
+                    <p>{item.body}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="hm-notices-empty">
+                <span className="hm-notices-icon"><Megaphone size={20} /></span>
+                <strong>Sin avisos urgentes</strong>
+                <p>Los avisos y mensajes del entrenador para la plantilla saldrán aquí.</p>
+              </div>
+            )}
+            {isCoach && (
+              <button type="button" className="hm-publish" onClick={() => setShowNotice(true)}>
+                <Plus size={14} /> Publicar nota al vestuario
+              </button>
+            )}
+          </Card>
         </aside>
       </div>
-    </>
+    </div>
   )
 }

@@ -19,6 +19,7 @@ export interface Player {
   position: string | null
   availability: Availability
   photo_path: string | null
+  invite_email: string | null
   created_at: string
 }
 
